@@ -1,0 +1,679 @@
+---
+title: "Final Project"
+author:
+- Ebenezer Nkum^[enkum@miners.utep.edu]
+- University of Texas at El Paso (UTEP)
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    keep_tex: yes
+    fig_caption: yes
+    latex_engine: pdflatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- "\\rhead{DS 6339-- Data Visualization}"
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+- "\\DeclareUnicodeCharacter{2212}{\\ensuremath{-}}"
+editor_options: 
+  chunk_output_type: inline
+---
+
+<!-- QUESTION ONE: WHAT --> 
+\noindent\rule{17.5cm}{0.8pt}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
+# Load libraries
+library(lubridate)
+library(tidyverse)
+library(dplyr)
+#library(plotly)
+library(hrbrthemes)
+library(kableExtra)
+library(knitr)
+library(tinytex)
+library(tibble)
+library(ggrepel)
+library(ggplot2)
+library("reshape2")   
+library(patchwork)
+library(gridExtra)
+library(GGally)
+library(plotly)
+library(ggforce)
+```
+
+# Introduction 
+
+This analysis aimed to investigate the relationship between food security and academic success among college students. The study examined the food security status of 1,716 participants and assessed the impact of food security on various academic outcomes, including access to funds, concentration, degree completion, and gender differences.
+
+
+```{r,echo=FALSE}
+# Load data
+# Load master data 
+dat0 <- read.csv("master.csv", header = T)
+
+#dim(dat0) #; head(dat0)
+```
+
+
+```{r,echo=FALSE, message=FALSE}
+
+# Combine second data
+# subset clean part
+dat1 <- read.csv("extra_questions_withID.csv", header = T)
+
+
+# subset clean part
+dat1 <-dat1[, c(1,43:57)]
+#dim(dat1) #; head(dat1)
+
+# merge the data base on the id's
+datC <- merge(dat0,dat1, by.x="RespondentId")
+
+#dim(datC)
+```
+
+
+
+```{r,echo=FALSE}
+# Update the USDA index
+datC$USDAcat <- 
+    ifelse((datC$index=="0")|(datC$index=="1"),"High FS", 
+      ifelse((datC$index=="2")|(datC$index=="3")|(datC$index=="4"),"Low FS",
+        ifelse((datC$index=="5")|(datC$index=="6"),"Very Low FS",datC$index )))
+
+
+datC$Gender <- ifelse(datC$Gender=="1", "Female", 
+                      ifelse(datC$Gender=="2", "Male", "others"))
+
+# group Emergency loan and loan into loans
+datC$FedAid <- ifelse(datC$FedAid =="Emergency Loan", "Loans",datC$FedAid)
+
+
+# newgroup for income, there is no NA's
+
+datC$newgroup <- ifelse(datC$Income=="$10,000 to $19,999"|datC$Income=="Less than $10,000", "Less than $20,000",
+      ifelse(datC$Income=="$20,000 to $29,999"|datC$Income=="$30,000 to $39,999"|datC$Income=="$40,000 to $49,999","$20,000 to $49,999",  ifelse(datC$Income=="$50,000 to $59,999"|datC$Income=="$60,000 to $69,999"|datC$Income=="$70,000 to $79,999","$50,000 to $79,999","$80,000 or more")))
+
+# Regroup the Income level
+datC$newgroup <- factor(datC$newgroup,levels=c("Less than $20,000","$20,000 to $49,999",
+                                        "$50,000 to $79,999", "$80,000 or more"), ordered = T)
+
+## colleges
+
+datC$College <- ifelse(datC$College=="1", "Business",
+                   ifelse(datC$College=="2","Education",  
+                     ifelse(datC$College=="3","Engineering", 
+                        ifelse(datC$College=="4","Liberal Arts",
+                          ifelse(datC$College=="5","Health Science",
+                            ifelse(datC$College=="6","Nursing",
+                              ifelse(datC$College=="7","Science",
+                                  ifelse(datC$College=="8","Pharmacy",
+                                    ifelse(datC$College=="9","Other","Multiple Colleges")))))))))
+
+# Reorder the Classification column as an ordered factor
+datC$Classification <- factor(datC$Classification,
+                                      levels = c("Freshman","Sophomore", "Junior", "Senior", 
+                                                 "Professional (Certificate Program)",
+                                                 "Graduate (Masters)", "Doctoral"), ordered = TRUE)
+datC$USDAcat <- factor(datC$USDAcat, levels = c("Very Low FS", "Low FS", "High FS"), ordered = TRUE)
+```
+
+
+
+
+
+# How is use of government federal aid/assistance associated with food insecurity as measured by the USDA index or categories?
+
+```{r, echo = FALSE, message=FALSE,fig.height= 8, fig.width= 15}
+
+
+# Food security distribution on campus
+
+## summary
+foodSecurity <- as.data.frame(table(datC$USDAcat, useNA = "ifany"))
+
+levels(foodSecurity$Var1) <- c(levels(foodSecurity$Var1), "No response")
+
+# Replace missing values with "no response"
+foodSecurity$Var1[is.na(foodSecurity$Var1)] <- "No response"
+
+# foodSecurity$Var1 <- ifelse(is.na(foodSecurity$Var1), 
+#                                  "No response",foodSecurity$Var1)
+#foodSecurity <- foodSecurity[!is.na(foodSecurity$Var1), ]
+
+foodSecurity$percent <- round(foodSecurity$Freq/sum(foodSecurity$Freq)*100,0)
+
+# remove na's
+
+
+# Set the plot width and height
+plot.width <- 8
+plot.height <- 4
+
+# custom colors
+custom_palette <- c("#99CC99","#999879","#999789" ,"#999999" )
+
+# Create the bar chart
+fS <- ggplot(foodSecurity, aes(x=reorder(Var1,Freq) , y= Freq)) + 
+  geom_bar(stat = "identity", fill= custom_palette, width= 0.7) + 
+  geom_text(aes(label = paste(Freq, paste0("(",percent,"%",")")), y = Freq + 10, hjust = -0.02),
+            position = position_dodge(width=0.7), size=3)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text.y = element_text(size=10), # adjust the size of the y-axis text
+        axis.title.y = element_text(size=12), # adjust the size of the y-axis title
+        axis.text.x = element_text(size=10), # adjust the size of the x-axis text
+        axis.title.x = element_text(size=12), # adjust the size of the x-axis title
+        plot.title = element_text(size=12), # adjust the size of the plot title
+        panel.grid.major.y = element_blank(), # remove the horizontal gridlines
+        panel.grid.minor.y = element_blank(), # remove the horizontal gridlines
+        plot.margin = unit(c(1, 0.5, 0.5, 3), "lines")) + # adjust the plot margins to allow for the text labels
+  ylab("Frequency") +
+  xlab("Food Security (FS)")+ 
+  ggtitle("Frequency distribution of Food security")+
+  annotate("text", x ="Very Low FS", y = 1000, 
+           label = "Out of the 1743 \n student participants,\n (604) 35% have very\n low food security", 
+           hjust = 1, size = 4, color = "#99CC99") + coord_flip()
+
+# Scale the bars to fit the plot height
+fS <- fS + scale_y_continuous(limits = c(0, max(foodSecurity$Freq) * 1.1))
+
+# summary of gender by food security by Aid
+foodIns_FedAid_Gend <- datC %>% 
+           filter(!(FedAid=="UTEP's COVID CARES Act Fund"|FedAid=="Other")) %>% 
+           group_by(FedAid,USDAcat) %>% 
+           summarise(Freq =n())
+
+foodIns_FedAid_Gend <- replace_na(foodIns_FedAid_Gend, list(USDAcat = NA))
+
+foodIns_FedAid_Gend <- foodIns_FedAid_Gend[!is.na(foodIns_FedAid_Gend$USDAcat), ]
+
+
+# calculate the total frequency for each Var2 group
+total_freq <- tapply(foodIns_FedAid_Gend$Freq, foodIns_FedAid_Gend$USDAcat, sum)
+
+# calculate the percentages for each Var2 group
+foodIns_FedAid_Gend$Percent <- round(foodIns_FedAid_Gend$Freq / total_freq[foodIns_FedAid_Gend$USDAcat] * 100,0)
+
+custom_palette <- c("#99CC99","#999879","#999789")
+
+# Create plot object
+fSIG <- ggplot(data = foodIns_FedAid_Gend, aes(x = reorder(FedAid, Percent), 
+                                  y = Percent, fill = USDAcat)) + 
+  geom_bar(stat = "identity", width=0.7, position=position_dodge(width=0.8)) + 
+  geom_text(aes(label = paste(paste0(Percent,"%")), y = Percent + 1, vjust = -0.3),
+            position = position_dodge(width=0.7), size=3) +
+  ylab("Frequency") +
+  xlab("Federal Aid") +
+  ggtitle("Association between Federal Aid and Food Security") +
+  theme_classic() +
+  scale_fill_manual(values = custom_palette, name = "Food Security") +
+  theme(legend.position = "none")+ #c(0.1,0.8)) 
+  annotate("text", x =2.2, y = 55, 
+           label = "A higher proportion of student participants in all \n food security categories have access to work-study aid.", 
+           hjust = 1, size = 4, color = "#800020")  +
+      geom_segment(aes(x = 0.5,
+                   y = 15,
+                   xend = 3,
+                   yend = 60),
+               arrow = arrow(length = unit(0.6, "cm")))
+  
+  
+# Arrange the plots vertically
+grid.arrange(fS, fSIG, nrow=1)
+```
+Based on the above figures, it can be observed that 604 (35\%) of the total participants in the study experience very low food security, indicating high levels of food insecurity. From the percentage group bar chart base on Food Security, it is evident that out of the 604 participants who experience very low food security, 14\% receive scholarship, 33\% depend on loans, and the remaining 53\% rely on federal work-study aid. Across all three categories of food security (i.e., very low, low, and high), it is consistently noted that not less than 50\% of each group depend on work-study aid. It would be valuable to determine which level classification (whether juniors, seniors to doctoral level) among the study participants have greater access to funds, particularly in the form of scholarships.
+
+
+```{r, echo = FALSE, message=FALSE,fig.height= 10, fig.width= 12}
+custom_palette <- c("#6699CC", "#999981","#99CC99")
+
+coll_foodIn <- datC %>%
+           group_by(Classification,USDAcat) %>%
+           summarise(Freq =n())
+coll_foodIn <- coll_foodIn[!is.na(coll_foodIn$USDAcat), ]
+
+
+# Create a new data frame with the sum of Freq under each College
+coll_sum_freq <- coll_foodIn %>%
+  group_by(Classification) %>%
+  summarize(sum_freq = sum(Freq)) %>%
+  arrange(sum_freq) # Sort the data frame by sum_freq in ascending order
+
+# Use the coll_sum_freq data frame to reorder the College factor levels in coll_foodIn
+coll_foodIn$Classification <- factor(coll_foodIn$Classification, levels = coll_sum_freq$Classification)
+
+
+
+
+# Create plot object
+p6 <- ggplot(coll_foodIn, aes(fill=reorder(USDAcat,Freq), y=Freq, x=Classification)) + 
+  geom_bar(stat="identity") + 
+  scale_fill_manual(values = custom_palette, name = "Food Security",  guide = "none") +
+  #geom_text(aes(label = paste0(round(Freq, 1), "")), position = position_fill(vjust = 0.5)) + # Add percentages
+  ylab("Frequency") + # Change y-axis label to "Percentage by DiffConcentrate"
+  xlab("Classification") +
+  ggtitle("Association between Federal Aid and Food Security") +
+  coord_flip()+
+  theme_classic() + theme(legend.position ="none") # c(0.9,0.1)) 
+
+
+
+foodIns_College <- datC %>%
+          filter(!(FedAid=="UTEP's COVID CARES Act Fund"|FedAid=="Other")) %>%
+           group_by(FedAid, USDAcat,Classification) %>%  # College) %>%
+           summarise(Freq =n())
+
+foodIns_College <- foodIns_College[!is.na(foodIns_College$USDAcat), ]
+
+# Create a new data frame with the sum of Freq under each College
+coll_sum_freq0 <- foodIns_College %>%
+  group_by(Classification) %>%
+  summarize(sum_freq = sum(Freq)) %>%
+  arrange(sum_freq) # Sort the data frame by sum_freq in ascending order
+
+# Use the coll_sum_freq data frame to reorder the College factor levels in coll_foodIn
+#foodIns_College$Classification <- factor(foodIns_College$Classification, levels = coll_sum_freq0$Classification)
+
+
+custom_palette <- c("#99CC99", "#999981","#6699CC")
+
+fdCO <- ggplot(foodIns_College, 
+  aes(x =FedAid , y = Classification , size = Freq, color = USDAcat)) +
+  geom_point()+ 
+  facet_wrap(~USDAcat) +
+  scale_color_manual(values = custom_palette, guide = "none")+ 
+  theme_classic() +
+  geom_rect(data = data.frame(Classification = "Scholarship"), aes(xmin =  1.9, xmax = 2.1, ymin = 0, ymax      = Inf), alpha = 0.3, fill="#722f37",inherit.aes = FALSE)+xlab("Federal Aid") 
+  # annotate(data=data.frame(USDAcat="Low FS"), geom="point", x=2, y=5, size=5, shape=21, fill="transparent") +
+  #   geom_hline(yintercept=5000, color="orange", size=.5)
+  
+
+
+# p6 <- ggplotly(p6) 
+# fdCO <- ggplotly(fdCO)
+# fdCO
+#grid.arrange(p6, fdCO, ncol=1)
+
+#fig <- subplot(p6, fdCO, nrows = 2) 
+ 
+grid.arrange(p6,fdCO, nrow=2)
+```
+The column barplot reveals that the data or study had the highest representation of seniors followed by juniors, freshmen, sophomores, graduates, doctoral students, and professional (certificate program) students, in that order. However, the bubble plot shows that among the participants with very low food security, the proportion of students receiving scholarships begins to increase from freshmen through to seniors, but decreases from Graduate students to Doctoral students. Notably, the study found that no participants in the professional program received any scholarship during the period under review. The same trend is observed under participants with low food security, but under high food security, only one senior participant received a scholarship. Also, we could observe that larger proportion of Graduate participants receive the work-study aid as compare to Juniors with larger proportion of participants receive loans under the category with very Low Food Security. 
+
+
+# 2) Does food insecurity (as measured by USDA index or categories) have a relationship with the items pertaining to concentration on school and degree progress/completion?
+
+```{r,echo = FALSE, message=FALSE, fig.height= 10, fig.width= 12}
+foodIns_conInSch <- datC %>%  dplyr::group_by(USDAcat, DiffConcentrate) %>% 
+                                       summarise(Freq= n())
+
+foodIns_conInSch <- foodIns_conInSch %>% 
+            filter(!(USDAcat  == "NA"|DiffConcentrate =="NA"))
+
+
+# calculate the total frequency for each Var2 group
+total_freq <- tapply(foodIns_conInSch$Freq, foodIns_conInSch$USDAcat, sum)
+
+# calculate the percentages for each Var2 group
+foodIns_conInSch$Percent <- round(foodIns_conInSch$Freq / total_freq[foodIns_conInSch$USDAcat] * 100,0)
+
+# Reorder the DiffConcentrate column as an ordered factor
+foodIns_conInSch$DiffConcentrate <- factor(foodIns_conInSch$DiffConcentrate,
+                                      levels = c("Almost every day", "About once a week", 
+                                                 "About once a month", 
+                                                 "Never"),ordered = TRUE)
+
+# Define color palette
+custom_palette <- c("#6699CC", "#999981","#99CC99")
+
+
+# Create plot object
+p <- ggplot(data = foodIns_conInSch, aes(x = DiffConcentrate, y = Percent, fill = reorder(USDAcat,Percent))) + 
+  geom_bar(stat = "identity", width=0.7, position=position_dodge(width=0.8)) + 
+  geom_text(aes(label = paste(paste0(Percent,"%")), y = Percent + 1, vjust = -0.3),
+            position = position_dodge(width=0.9), size=3) +
+  ylab("Percentage of the Food Insecurity") +
+  xlab("Difficult to Concentrate") +
+  ggtitle("Association between Food Security and Concentration in School") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size=10), # adjust the size of the y-axis text
+        axis.title.y = element_text(size=12), # adjust the size of the y-axis title
+        axis.text.x = element_text(size=10), # adjust the size of the x-axis text
+        axis.title.x = element_text(size=12), # adjust the size of the x-axis title
+        plot.title = element_text(size=12), # adjust the size of the plot title
+        panel.grid.major.y = element_blank(), # remove the horizontal gridlines
+        panel.grid.minor.y = element_blank(), # remove the horizontal gridlines
+        plot.margin = unit(c(1, 0.5, 0.5, 3), "lines")) + 
+  
+  scale_fill_manual(values = custom_palette, name = "Food Security")+  #+ # Set custom colors
+  annotate("text", x = 1.8, y = 40, 
+           label = "High proportion of students\n with Very Low Food Security have\n difficulty to concentrat almost every day", hjust = 1, size = 3, color = "#6699CC") +
+   annotate("text", x = 4, y = 40, 
+           label = "High proportion of students\n with High Food Security have\n never experiences lack of concentration", hjust = 1, size = 3, color = "#99CC99") 
+
+p
+
+```
+Upon analyzing the graph, it is clear that participants who have Very Low Food Security face significant challenges with concentration, with 37\% experiencing difficulties almost every day. Additionally, 32% of participants face difficulties in concentration about once a week, while 24\% of participants experience these difficulties about once a month. However, it is worth noting that 7\% of these participants have not experienced any difficulty in concentration. On the other hand, participants who have Very High Food Security experience significantly fewer difficulties with concentration, with only 11\% reporting difficulties in concentration almost every day compared to the 39\% who never experience any difficulty in concentration. These findings demonstrate the clear impact of food security on concentration and highlight the importance of addressing this issue to promote academic success and well-being among college students. 
+
+
+```{r,echo = FALSE, message=FALSE, fig.height= 10, fig.width= 12}
+#"Almost every day"
+# Delay completion
+delaydegreeC_ConInSch <- datC %>%  
+                    dplyr::group_by(USDAcat, DelayComplDegree) %>% 
+                                       summarise(Freq= n())
+
+delaydegreeC_ConInSch <- delaydegreeC_ConInSch %>% 
+            filter(!(USDAcat  == "NA"|DelayComplDegree =="NA"))
+
+# calculate the total frequency for each Var2 group
+total_freq <- tapply(delaydegreeC_ConInSch$Freq, delaydegreeC_ConInSch$USDAcat, sum)
+
+# calculate the percentages for each Var2 group
+delaydegreeC_ConInSch$Percent <- round(delaydegreeC_ConInSch$Freq / total_freq[delaydegreeC_ConInSch$USDAcat] * 100,0)
+
+
+# Reorder the DiffConcentrate column as an ordered factor
+delaydegreeC_ConInSch$DelayComplDegree <- factor(delaydegreeC_ConInSch$DelayComplDegree,
+                                      levels = c("No","Yes, by 1 semester", 
+                                 "Yes, by 2 semesters or more"),ordered = TRUE)
+
+# Define color palette
+custom_palette <- c("#6699CC", "#999981","#99CC99")
+
+# Create plot object
+p1 <- ggplot(data = delaydegreeC_ConInSch, aes(x = DelayComplDegree, y = Percent, fill = USDAcat)) + 
+  geom_bar(stat = "identity", width=0.85, position=position_dodge(width=0.9)) + 
+  geom_text(aes(label = paste(paste0(Percent,"%")), y = Percent + 1, vjust = -0.3),
+            position = position_dodge(width=0.9), size=3) +
+  ylab("Frequency") +
+  xlab("Delay Degree Completion") +
+  ggtitle("Association between Federal Aid and Food Security") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size=10), # adjust the size of the y-axis text
+        axis.title.y = element_text(size=12), # adjust the size of the y-axis title
+        axis.text.x = element_text(size=10), # adjust the size of the x-axis text
+        axis.title.x = element_text(size=12), # adjust the size of the x-axis title
+        plot.title = element_text(size=12), # adjust the size of the plot title
+        panel.grid.major.y = element_blank(), # remove the horizontal gridlines
+        panel.grid.minor.y = element_blank(), # remove the horizontal gridlines
+        plot.margin = unit(c(1, 0.5, 0.5, 3), "lines")) +
+  scale_fill_manual(values = custom_palette, name = "Food Security") + # Set custom colors
+  annotate("text", x = 3, y = 40, 
+           label = "22% of the students who have Very Low Food Security\n delay degree completion by 2 semesters or more ", hjust = 1, size = 5, color = "#6699CC") +
+  annotate("text", x = 2.3, y = 90, 
+           label = "94% of the students with High Food Security have \nnever experience delay degree completion", hjust = 1, size = 3, color = "#99CC99") 
+
+# Arrange the plots vertically
+p1
+```
+
+From the data presented, it is evident that the majority of students across all food security categories do not experience delay in degree completion. Specifically, 63\% of students who reported Very Low Food Security, 77\% of students who reported Low Food Security, and 94\% of students who reported High Food Security reported no delay in degree completion. However, it is concerning to note that a significant percentage of students who reported Very Low Food Security, approximately 22\%, reported a delay in degree completion by two semesters or more. This highlights the potential impact of food insecurity on academic performance and the need for interventions to support affected students.
+
+# 3) Are there gender or ethnicity differences in the items pertaining to concentration on school and degree progress/completion?
+
+```{r, echo = FALSE, message=FALSE, fig.height= 12, fig.width= 10}
+
+# Food security distribution on campus
+## summary
+GenderF <- as.data.frame(table(datC$Gender, useNA = "ifany"))
+
+# foodSecurity <- replace_na(foodSecurity, list(Var1 = NA))
+
+# foodSecurity$Var1 <- ifelse(is.na(foodSecurity$Var1), 
+#                                  "No response",foodSecurity$Var1)
+GenderF <- GenderF[!is.na(GenderF$Var1), ]
+
+GenderF$percent <- round(GenderF$Freq/sum(GenderF$Freq)*100,0)
+
+# remove na's
+
+
+# Set the plot width and height
+plot.width <- 8
+plot.height <- 4
+
+# custom colors
+custom_palette <- c("#6699CC","#999981" ,"#99CC99")
+
+# Create the bar chart
+pp <- ggplot(GenderF, aes(x=reorder(Var1,-Freq) , y= Freq)) + 
+  geom_bar(stat = "identity", fill= custom_palette, width= 0.7) + 
+  geom_text(aes(label = paste(Freq, paste0("(",percent,"%",")")), y = Freq + 10, hjust = -0.3),
+            position = position_dodge(width=0.7), size=3)+
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size=10),  # adjust the size of the y-axis text
+        axis.title.y = element_text(size=12), # adjust the size of the y-axis title
+        axis.text.x = element_text(size=10),  # adjust the size of the x-axis text
+        axis.title.x = element_text(size=12), # adjust the size of the x-axis title
+        plot.title = element_text(size=12),   # adjust the size of the plot title
+        panel.grid.major.y = element_blank(), # remove the horizontal gridlines
+        panel.grid.minor.y = element_blank(), # remove the horizontal gridlines
+        plot.margin = unit(c(1, 0.5, 0.5, 3), "lines")) + # adjust the plot margins to allow for the text labels
+  ylab("Frequency") +
+  xlab("Gender")+ 
+  ggtitle("Gender distribution")
+
+  # annotate("text", x ="Low FS", y = 600, 
+  #          label = "Out of the 1743 \n student participants,\n (604) 35% have very\n low food security", 
+  #          hjust = 1, size = 4, color = "#99CC99") 
+
+
+
+# gender by difficult to concentrate
+
+
+gender_ConInSch <- datC %>%  dplyr::group_by(Gender, DiffConcentrate) %>% 
+                                       summarise(Freq= n())
+
+
+gender_ConInSch <- gender_ConInSch %>% 
+            filter(!(Gender  == "NA"|DiffConcentrate =="NA"))
+
+
+
+
+# calculate the total frequency for each Var2 group
+total_freq <- tapply(gender_ConInSch$Freq, gender_ConInSch$Gender, sum)
+
+# calculate the percentages for each Var2 group
+gender_ConInSch$Percent <- round(gender_ConInSch$Freq / total_freq[gender_ConInSch$Gender] * 100,0)
+
+
+# Reorder the DiffConcentrate column as an ordered factor
+gender_ConInSch$DiffConcentrate <- factor(gender_ConInSch$DiffConcentrate,
+                                      levels = c("Almost every day", "About once a week", 
+                                                 "About once a month", 
+                                                 "Never"),ordered = TRUE)
+
+
+# Define color palette
+custom_palette <- c("#6699CC", "#99CC99","#999981")
+
+# Create plot object
+p <- ggplot(data = gender_ConInSch, aes(x = DiffConcentrate, y = Percent, fill = reorder(Gender,Percent))) + 
+  geom_bar(stat = "identity", width=0.85, position=position_dodge(width=0.9)) + 
+  geom_text(aes(label = paste(paste0(Percent,"%")), y = Percent + 1, vjust = -0.2),
+            position = position_dodge(width=0.9), size=3) +
+  ylab("Percentage of the Food Insecurity") +
+  xlab("Difficult to Concentrate") +
+  ggtitle("Association between Federal Aid and Food Security") +
+  theme_bw() +
+  scale_fill_manual(values = custom_palette, name = "Food Security") + # Set custom colors
+  theme(legend.position = "none") +
+  annotate("text", x = 3, y = 35, 
+           label = "A high proportion of females \n experience difficulty concentrating,\n typically once a month.", hjust = 1, size = 3, color = "#6699CC") +
+   annotate("text", x = 3.8, y = 37, 
+           label = "A high proportion of males \n never experienced \n difficulty in concentrating", hjust = 1, size = 3, color = "#99CC99")
+
+# Print pl
+
+# Arrange the plots vertically
+grid.arrange(pp, p, nrow=2)
+```
+
+Based on the first plot, it is evident that females comprised the largest proportion of participants at 66\%, followed by males at 32\%, and other genders at 2\%.
+After examining the percentage bar plot presented above, we can observe that a significant proportion of female student participants (31\%) reported experiencing difficulty in concentration about once a month. In contrast, a higher proportion of male student participants (34\%) reported never experiencing difficulty in concentration. This finding is noteworthy as it highlights potential gender differences in the ability to concentrate among the study population. 
+
+
+```{r, fig.height= 10, fig.width= 12, message=FALSE,  echo=FALSE}
+delaydegreeC_ConInSch <- datC %>%  
+                    dplyr::group_by(Gender, DelayComplDegree) %>% 
+                                       summarise(Freq= n())
+
+
+delaydegreeC_ConInSch <- delaydegreeC_ConInSch %>% 
+            filter(!(Gender  == "NA"|DelayComplDegree =="NA"))
+
+
+
+
+# calculate the total frequency for each Var2 group
+total_freq <- tapply(delaydegreeC_ConInSch$Freq, delaydegreeC_ConInSch$Gender, sum)
+
+# calculate the percentages for each Var2 group
+delaydegreeC_ConInSch$Percent <- round(delaydegreeC_ConInSch$Freq / total_freq[delaydegreeC_ConInSch$Gender] * 100,0)
+
+
+# Reorder the DiffConcentrate column as an ordered factor
+delaydegreeC_ConInSch$DelayComplDegree <- factor(delaydegreeC_ConInSch$DelayComplDegree,
+                                      levels = c("No","Yes, by 1 semester", 
+                                 "Yes, by 2 semesters or more"),ordered = TRUE)
+
+
+# Define color palette
+custom_palette <- c("#6699CC", "#99CC99","#999981")
+
+# Create plot object
+p1 <- ggplot(data = delaydegreeC_ConInSch, aes(x = DelayComplDegree, y = Percent, fill =Gender)) + 
+  geom_bar(stat = "identity", position = position_dodge(width=0.9)) + 
+  geom_text(aes(label = paste(paste0(Percent,"%")), y = Percent + 1, vjust = -0.3),
+            position = position_dodge(width=0.9), size=3) +
+  ylab("Frequency") +
+  xlab("Federal Aid") +
+  ggtitle("Association between Federal Aid and Food Security") +
+  theme_bw() +
+  scale_fill_manual(values = custom_palette, name = "Food Security") + # Set custom colors
+  theme(legend.position = c(0.9, 0.9))+
+    annotate("text", x = 2.9, y = 20, 
+           label = "Females face the higher risk of delay \n degree completion by 2 semesters or more", hjust = 1, size = 5, color ="#6699CC")
+
+p1
+```
+Based on the plot displayed above, we can observe that both female and male student participants have a low percentage of delay in degree completion, either by a semester or more. However, it is noteworthy that females face a higher risk of delay in degree (14\% females against 10\% males in this category) completion by 2 semesters or more, compared to males. On the other hand, males have a higher percentage (11\% males against 10\% females in this category) of delay in degree completion by 1 semester, as compared to females.
+
+
+# Conclusion
+
+The findings of this study highlight the significant impact of food security on college students' academic success. The study found that a considerable proportion of students experience very low food security, indicating high levels of food insecurity, and rely heavily on federal work-study aid. While the majority of students across all food security categories do not experience delay in degree completion, a significant percentage of students who reported very low food security reported a delay in degree completion by two semesters or more. Additionally, female students face a higher risk of delay in degree completion by two semesters or more, while male students have a higher percentage of delay in degree completion by one semester. These findings underscore the importance of addressing food 
+
+```{r,  echo=FALSE}
+# # there is no NA's in the Ethnicity so this codes work perfectly
+# datC$Ethnicity <- ifelse(datC$College=="1", "Hispanic",
+#                    ifelse(datC$College=="2","American Indian",  
+#                      ifelse(datC$College=="3","Asian", 
+#                         ifelse(datC$College=="4","African American",
+#                           ifelse(datC$College=="5","Native Hawaiian",
+#                             ifelse(datC$College=="6","White/Caucasian",
+#                               ifelse(datC$College=="7","Other",
+#                                   ifelse(datC$College=="8","Prefer not to say",
+#                                          "Multi Racial"))))))))
+
+```
+
+```{r, echo = FALSE, message=FALSE, fig.height= 8, fig.width= 10}
+# # Food security distribution on campus
+# ## summary
+# foodSecurity <- as.data.frame(table(datC$USDAcat, useNA = "ifany"))
+# 
+# # foodSecurity <- replace_na(foodSecurity, list(Var1 = NA))
+# 
+# # foodSecurity$Var1 <- ifelse(is.na(foodSecurity$Var1), 
+# #                                  "No response",foodSecurity$Var1)
+# foodSecurity <- foodSecurity[!is.na(foodSecurity$Var1), ]
+# 
+# foodSecurity$percent <- round(foodSecurity$Freq/sum(foodSecurity$Freq)*100,0)
+# 
+# # remove na's
+# 
+# 
+# # Set the plot width and height
+# plot.width <- 8
+# plot.height <- 4
+# 
+# # custom colors
+# custom_palette <- c("#6699CC","#999981" ,"#99CC99")
+# 
+# # Create the bar chart
+# fS <- ggplot(foodSecurity, aes(x=reorder(Var1,-Freq) , y= Freq)) + 
+#   geom_bar(stat = "identity", fill= custom_palette, width= 0.7) + 
+#   geom_text(aes(label = paste(Freq, paste0("(",percent,"%",")")), y = Freq + 10, hjust = -0.3),
+#             position = position_dodge(width=0.7), size=3)+
+#   theme_classic() +
+#   theme(legend.position = "none",
+#         axis.text.y = element_text(size=10),  # adjust the size of the y-axis text
+#         axis.title.y = element_text(size=12), # adjust the size of the y-axis title
+#         axis.text.x = element_text(size=10),  # adjust the size of the x-axis text
+#         axis.title.x = element_text(size=12), # adjust the size of the x-axis title
+#         plot.title = element_text(size=12),   # adjust the size of the plot title
+#         panel.grid.major.y = element_blank(), # remove the horizontal gridlines
+#         panel.grid.minor.y = element_blank(), # remove the horizontal gridlines
+#         plot.margin = unit(c(1, 0.5, 0.5, 3), "lines")) + # adjust the plot margins to allow for the text labels
+#   ylab("Frequency") +
+#   xlab("Food Security (FS)")+ 
+#   ggtitle("Frequency distribution of Food security")
+# 
+# 
+# # Scale the bars to fit the plot height
+# fS <- fS + scale_y_continuous(limits = c(0, max(foodSecurity$Freq) * 1.1))
+# 
+# fS
+```
+
+
+```{r, fig.height=10, echo=FALSE}
+# custom_palette <- c("#6699CC", "#999999", "#99CC99")
+# 
+# # Create plot object
+# p <- ggplot(foodIns_conInSch, aes(fill=USDAcat, y=Freq, x=DiffConcentrate)) + 
+#   geom_bar(position="fill", stat="identity") + 
+#   scale_fill_manual(values = custom_palette, name = "Food Security") +
+#   geom_text(aes(label = paste0(round(Freq/sum(Freq)*100, 1), "%")), position = position_fill(vjust = 0.5)) + # Add percentages
+#   ylab("Proportion") + # Change y-axis label to "Proportion"
+#   xlab("Federal Aid") +
+#   ggtitle("Association between Federal Aid and Food Security") +
+#   theme_bw()
+# 
+# 
+# p
+```
+
